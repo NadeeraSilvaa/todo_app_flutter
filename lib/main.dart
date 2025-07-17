@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:todo_app_flutter/screens/register_page.dart';
 import 'package:todo_app_flutter/theme/colors.dart';
 import 'package:todo_app_flutter/screens/login_page.dart';
 import 'package:todo_app_flutter/screens/home_page.dart';
@@ -51,6 +52,7 @@ class TodoListApp extends StatelessWidget {
       routes: {
         '/': (context) => const AuthWrapper(),
         '/login': (context) => const LoginPage(),
+        '/register': (context) => const RegisterPage(),
         '/home': (context) => const HomePage(),
         '/add_task': (context) => const AddTaskPage(),
         '/edit_task': (context) => const EditTaskPage(),
