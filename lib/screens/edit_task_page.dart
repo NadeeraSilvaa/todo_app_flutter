@@ -13,9 +13,12 @@ class EditTaskPage extends StatefulWidget {
 class _EditTaskPageState extends State<EditTaskPage> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
+  late TextEditingController _notesController;
+  late TextEditingController _reminderController;
   late String _selectedCategory;
   late String _selectedPriority;
   late DateTime _selectedDate;
+  late TimeOfDay _selectedReminderTime;
   late String _taskId;
 
   @override
@@ -23,6 +26,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
     super.initState();
     _titleController = TextEditingController();
     _descriptionController = TextEditingController();
+    _notesController = TextEditingController();
+    _reminderController = TextEditingController();
   }
 
   @override
@@ -32,9 +37,17 @@ class _EditTaskPageState extends State<EditTaskPage> {
     _taskId = task['id'];
     _titleController.text = task['title'];
     _descriptionController.text = task['description'];
+    _notesController.text = task['notes'] ?? '';
     _selectedCategory = task['category'];
     _selectedPriority = task['priority'];
     _selectedDate = task['dueDate'];
+    if (task['reminder'] != null) {
+      final reminderDateTime = (task['reminder'] as Timestamp).toDate();
+      _selectedReminderTime = TimeOfDay.fromDateTime(reminderDateTime);
+      _reminderController.text = _selectedReminderTime.format(context);
+    } else {
+      _selectedReminderTime = TimeOfDay.now();
+    }
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -59,12 +72,45 @@ class _EditTaskPageState extends State<EditTaskPage> {
     }
   }
 
+  Future<void> _selectReminderTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedReminderTime,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: AppColors.accent),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _selectedReminderTime) {
+      setState(() {
+        _selectedReminderTime = picked;
+        _reminderController.text = picked.format(context);
+      });
+    }
+  }
+
   Future<void> _updateTask() async {
+    final reminderDateTime = _reminderController.text.isNotEmpty
+        ? DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedReminderTime.hour,
+      _selectedReminderTime.minute,
+    )
+        : null;
+
     await FirebaseFirestore.instance.collection('tasks').doc(_taskId).update({
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
+      'notes': _notesController.text.trim(),
       'category': _selectedCategory,
       'dueDate': Timestamp.fromDate(_selectedDate),
+      'reminder': reminderDateTime != null ? Timestamp.fromDate(reminderDateTime) : null,
       'priority': _selectedPriority,
     });
     Navigator.pop(context);
@@ -73,49 +119,61 @@ class _EditTaskPageState extends State<EditTaskPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Task'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: AppColors.appBarGradient),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Edit Task',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Center(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.appBarGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Edit Task',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimaryDark,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildTextField(_titleController, 'Task Title', TextInputType.text),
+                  const SizedBox(height: 16),
+                  _buildTextField(_descriptionController, 'Description', TextInputType.multiline),
+                  const SizedBox(height: 16),
+                  _buildTextField(_notesController, 'Notes', TextInputType.multiline),
+                  const SizedBox(height: 16),
+                  _buildDropdown(
+                    'Category',
+                    _selectedCategory,
+                    ['Work', 'Personal', 'Urgent'],
+                        (value) => setState(() => _selectedCategory = value!),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildDropdown(
+                    'Priority',
+                    _selectedPriority,
+                    ['Low', 'Medium', 'High'],
+                        (value) => setState(() => _selectedPriority = value!),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildDatePicker(),
+                  const SizedBox(height: 16),
+                  _buildReminderPicker(),
+                  const SizedBox(height: 24),
+                  _buildGradientButton('Update Task', _updateTask),
+                ],
               ),
-              const SizedBox(height: 24),
-              _buildTextField(_titleController, 'Task Title', TextInputType.text),
-              const SizedBox(height: 16),
-              _buildTextField(_descriptionController, 'Description', TextInputType.multiline),
-              const SizedBox(height: 16),
-              _buildDropdown(
-                'Category',
-                _selectedCategory,
-                ['Work', 'Personal', 'Urgent'],
-                    (value) => setState(() => _selectedCategory = value!),
-              ),
-              const SizedBox(height: 16),
-              _buildDropdown(
-                'Priority',
-                _selectedPriority,
-                ['Low', 'Medium', 'High'],
-                    (value) => setState(() => _selectedPriority = value!),
-              ),
-              const SizedBox(height: 16),
-              _buildDatePicker(),
-              const SizedBox(height: 24),
-              _buildGradientButton('Update Task', _updateTask),
-            ],
+            ),
           ),
         ),
       ),
@@ -137,12 +195,14 @@ class _EditTaskPageState extends State<EditTaskPage> {
         maxLines: type == TextInputType.multiline ? 3 : 1,
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: TextStyle(color: AppColors.textSecondary),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
+        style: TextStyle(color: AppColors.textPrimary),
       ),
     );
   }
@@ -154,7 +214,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [AppColors.cardShadow],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: DropdownButton<String>(
         value: value,
         isExpanded: true,
@@ -166,6 +226,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
           );
         }).toList(),
         onChanged: onChanged,
+        hint: Text(label, style: TextStyle(color: AppColors.textSecondary)),
       ),
     );
   }
@@ -183,11 +244,43 @@ class _EditTaskPageState extends State<EditTaskPage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Due Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
-              style: TextStyle(color: AppColors.textPrimary),
+            Flexible(
+              child: Text(
+                'Due Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
+                style: TextStyle(color: AppColors.textPrimary),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const Icon(Icons.calendar_today, color: AppColors.accent),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReminderPicker() {
+    return GestureDetector(
+      onTap: () => _selectReminderTime(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [AppColors.cardShadow],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(
+                _reminderController.text.isEmpty
+                    ? 'Set Reminder (Optional)'
+                    : 'Reminder: ${_reminderController.text}',
+                style: TextStyle(color: AppColors.textPrimary),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.alarm, color: AppColors.accent),
           ],
         ),
       ),
@@ -207,10 +300,15 @@ class _EditTaskPageState extends State<EditTaskPage> {
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          minimumSize: const Size(double.infinity, 48),
         ),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimaryDark,
+          ),
         ),
       ),
     );

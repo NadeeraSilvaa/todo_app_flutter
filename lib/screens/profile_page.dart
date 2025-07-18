@@ -3,8 +3,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final _profilePictureController = TextEditingController();
+  String? _profilePictureUrl;
 
   Stream<Map<String, dynamic>> getUserProfile() {
     final user = FirebaseAuth.instance.currentUser;
@@ -25,22 +33,32 @@ class ProfilePage extends StatelessWidget {
       return {
         'displayName': userDoc['displayName'] ?? 'User',
         'email': userDoc['email'] ?? user.email,
+        'profilePicture': userDoc['profilePicture'] ?? '',
         'totalTasks': total,
         'completedTasks': completed,
       };
     });
   }
 
+  Future<void> _updateProfilePicture() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'profilePicture': _profilePictureController.text.trim(),
+      });
+      setState(() {
+        _profilePictureUrl = _profilePictureController.text.trim();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile picture updated')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: AppColors.appBarGradient),
-        ),
-      ),
-      body: StreamBuilder<Map<String, dynamic>>(
+    return SafeArea(
+      child: StreamBuilder<Map<String, dynamic>>(
         stream: getUserProfile(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -54,6 +72,9 @@ class ProfilePage extends StatelessWidget {
           }
 
           final profile = snapshot.data!;
+          _profilePictureController.text = profile['profilePicture'] ?? '';
+          _profilePictureUrl = profile['profilePicture'];
+
           return SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -79,6 +100,29 @@ class ProfilePage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (_profilePictureUrl != null && _profilePictureUrl!.isNotEmpty)
+                          Center(
+                            child: CircleAvatar(
+                              radius: 50,
+                              backgroundImage: NetworkImage(_profilePictureUrl!),
+                              onBackgroundImageError: (_, __) => const Icon(Icons.error),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _profilePictureController,
+                          decoration: InputDecoration(
+                            labelText: 'Profile Picture URL',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildGradientButton('Update Picture', _updateProfilePicture),
+                        const SizedBox(height: 16),
                         Text(
                           'Name: ${profile['displayName']}',
                           style: TextStyle(fontSize: 18, color: AppColors.textPrimary),
@@ -127,6 +171,28 @@ class ProfilePage extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildGradientButton(String text, VoidCallback onPressed) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: AppColors.buttonGradient,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [AppColors.cardShadow],
+      ),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }

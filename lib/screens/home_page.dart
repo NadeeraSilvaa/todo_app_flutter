@@ -13,7 +13,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _selectedCategory = 'All';
-  int _currentIndex = 0;
+  String _selectedSort = 'Due Date';
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   Stream<List<Map<String, dynamic>>> getTasksStream() {
     String? uid = FirebaseAuth.instance.currentUser?.uid;
@@ -21,11 +23,29 @@ class _HomePageState extends State<HomePage> {
 
     Query<Map<String, dynamic>> query = FirebaseFirestore.instance
         .collection('tasks')
-        .where('userId', isEqualTo: uid)
-        .orderBy('dueDate', descending: false);
+        .where('userId', isEqualTo: uid);
 
     if (_selectedCategory != 'All') {
       query = query.where('category', isEqualTo: _selectedCategory);
+    }
+
+    if (_searchQuery.isNotEmpty) {
+      query = query
+          .where('title', isGreaterThanOrEqualTo: _searchQuery)
+          .where('title', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
+          .orderBy('title');
+    } else {
+      switch (_selectedSort) {
+        case 'Due Date':
+          query = query.orderBy('dueDate', descending: false);
+          break;
+        case 'Priority':
+          query = query.orderBy('priority', descending: true);
+          break;
+        case 'Title':
+          query = query.orderBy('title', descending: false);
+          break;
+      }
     }
 
     return query.snapshots().map((snapshot) {
@@ -34,8 +54,10 @@ class _HomePageState extends State<HomePage> {
           'id': doc.id,
           'title': doc['title']?.toString() ?? 'Untitled',
           'description': doc['description']?.toString() ?? '',
+          'notes': doc['notes']?.toString() ?? '',
           'category': doc['category']?.toString() ?? 'Personal',
           'dueDate': (doc['dueDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          'reminder': doc['reminder'] != null ? (doc['reminder'] as Timestamp).toDate() : null,
           'isCompleted': doc['isCompleted'] ?? false,
           'priority': doc['priority']?.toString() ?? 'Low',
         };
@@ -52,7 +74,7 @@ class _HomePageState extends State<HomePage> {
       case 'Urgent':
         return AppColors.urgentCategory;
       default:
-        return AppColors.textSecondary;
+        return AppColors.textPrimary;
     }
   }
 
@@ -65,59 +87,83 @@ class _HomePageState extends State<HomePage> {
       case 'High':
         return AppColors.priorityHigh;
       default:
-        return AppColors.textSecondary;
+        return AppColors.textPrimary;
+    }
+  }
+
+  Color _getTaskTitleColor(Map<String, dynamic> task) {
+    if (task['isCompleted']) {
+      return Colors.grey;
+    }
+    final isOverdue = !task['isCompleted'] && task['dueDate'].isBefore(DateTime.now());
+    return isOverdue ? Colors.red : AppColors.textPrimary;
+  }
+
+  String _getTimeLeft(DateTime dueDate) {
+    final now = DateTime.now();
+    final difference = dueDate.difference(now);
+
+    if (difference.isNegative) {
+      return 'Overdue';
+    }
+
+    final days = difference.inDays;
+    final hours = difference.inHours;
+    final minutes = difference.inMinutes;
+
+    if (days > 0) {
+      return '$days day${days == 1 ? '' : 's'} left';
+    } else if (hours > 0) {
+      return '$hours hour${hours == 1 ? '' : 's'} left';
+    } else {
+      return '$minutes minute${minutes == 1 ? '' : 's'} left';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('My Tasks'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: AppColors.appBarGradient),
-        ),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: () {}, // Prototype reminder badge
+    return SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Text(
+              'My Tasks',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
-              StreamBuilder<List<Map<String, dynamic>>>(
-                stream: getTasksStream(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox.shrink();
-                  final overdueCount = snapshot.data!
-                      .where((task) => !task['isCompleted'] && task['dueDate'].isBefore(DateTime.now()))
-                      .length;
-                  if (overdueCount == 0) return const SizedBox.shrink();
-                  return Positioned(
-                    right: 8,
-                    top: 8,
-                    child: CircleAvatar(
-                      radius: 8,
-                      backgroundColor: Colors.red,
-                      child: Text(
-                        '$overdueCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10),
-                      ),
-                    ),
-                  );
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [AppColors.cardShadow],
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search tasks...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  suffixIcon: Icon(Icons.search, color: AppColors.accent),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.trim();
+                  });
                 },
               ),
-            ],
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {}, // Prototype search functionality
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          const SizedBox(height: 100),
+          const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
@@ -127,6 +173,36 @@ class _HomePageState extends State<HomePage> {
                 _buildFilterButton('Work'),
                 _buildFilterButton('Personal'),
                 _buildFilterButton('Urgent'),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              children: [
+
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [AppColors.cardShadow],
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: DropdownButton<String>(
+                      value: _selectedSort,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      items: ['Due Date', 'Priority', 'Title'].map((String item) {
+                        return DropdownMenuItem<String>(
+                          value: item,
+                          child: Text(item, style: TextStyle(color: AppColors.textPrimary)),
+                        );
+                      }).toList(),
+                      onChanged: (value) => setState(() => _selectedSort = value!),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -150,7 +226,6 @@ class _HomePageState extends State<HomePage> {
                   itemCount: tasks.length,
                   itemBuilder: (context, index) {
                     final task = tasks[index];
-                    final isOverdue = !task['isCompleted'] && task['dueDate'].isBefore(DateTime.now());
                     return Dismissible(
                       key: Key(task['id']),
                       background: Container(
@@ -189,7 +264,7 @@ class _HomePageState extends State<HomePage> {
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               decoration: task['isCompleted'] ? TextDecoration.lineThrough : null,
-                              color: isOverdue ? Colors.red : AppColors.textPrimary,
+                              color: _getTaskTitleColor(task),
                             ),
                           ),
                           subtitle: Column(
@@ -197,7 +272,24 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               Text(
                                 '${task['category']} | Due: ${DateFormat('MMM dd, yyyy').format(task['dueDate'])}',
-                                style: TextStyle(color: AppColors.textSecondary),
+                                style: TextStyle(color: AppColors.textPrimary),
+                              ),
+                              if (task['notes'].isNotEmpty)
+                                Text(
+                                  'Notes: ${task['notes']}',
+                                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                                ),
+                              if (task['reminder'] != null)
+                                Text(
+                                  'Reminder: ${DateFormat('MMM dd, yyyy HH:mm').format(task['reminder'])}',
+                                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                                ),
+                              Text(
+                                _getTimeLeft(task['dueDate']),
+                                style: TextStyle(
+                                  color: task['isCompleted'] ? Colors.grey : AppColors.textPrimary,
+                                  fontSize: 12,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Container(
@@ -238,27 +330,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        selectedItemColor: AppColors.accent,
-        unselectedItemColor: AppColors.textSecondary,
-        backgroundColor: AppColors.cardBackground,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.list), label: 'Tasks'),
-          BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Add Task'),
-          BottomNavigationBarItem(icon: Icon(Icons.pie_chart), label: 'Summary'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-          if (index == 0) Navigator.pushNamed(context, '/home');
-          if (index == 1) Navigator.pushNamed(context, '/add_task');
-          if (index == 2) Navigator.pushNamed(context, '/summary');
-          if (index == 3) Navigator.pushNamed(context, '/profile');
-        },
-      ),
     );
   }
 
@@ -274,7 +345,7 @@ class _HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           color: _selectedCategory == category ? AppColors.accent : AppColors.cardBackground,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [AppColors.buttonShadow],
+          boxShadow: [AppColors.cardShadow],
         ),
         child: Text(
           category,

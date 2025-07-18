@@ -14,9 +14,12 @@ class AddTaskPage extends StatefulWidget {
 class _AddTaskPageState extends State<AddTaskPage> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _notesController = TextEditingController();
+  final _reminderController = TextEditingController();
   String _selectedCategory = 'Personal';
   String _selectedPriority = 'Low';
   DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedReminderTime = TimeOfDay.now();
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -40,16 +43,49 @@ class _AddTaskPageState extends State<AddTaskPage> {
     }
   }
 
+  Future<void> _selectReminderTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedReminderTime,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: AppColors.accent),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _selectedReminderTime) {
+      setState(() {
+        _selectedReminderTime = picked;
+        _reminderController.text = picked.format(context);
+      });
+    }
+  }
+
   Future<void> _addTask() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    final reminderDateTime = _reminderController.text.isNotEmpty
+        ? DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedReminderTime.hour,
+      _selectedReminderTime.minute,
+    )
+        : null;
 
     await FirebaseFirestore.instance.collection('tasks').add({
       'userId': user.uid,
       'title': _titleController.text.trim(),
       'description': _descriptionController.text.trim(),
+      'notes': _notesController.text.trim(),
       'category': _selectedCategory,
       'dueDate': Timestamp.fromDate(_selectedDate),
+      'reminder': reminderDateTime != null ? Timestamp.fromDate(reminderDateTime) : null,
       'isCompleted': false,
       'priority': _selectedPriority,
     });
@@ -58,31 +94,29 @@ class _AddTaskPageState extends State<AddTaskPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Task'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: AppColors.appBarGradient),
-        ),
-      ),
-      body: SingleChildScrollView(
+    return SafeArea(
+      child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'New Task',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+              Center(
+                child: Text(
+                  'New Task',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
               _buildTextField(_titleController, 'Task Title', TextInputType.text),
               const SizedBox(height: 16),
               _buildTextField(_descriptionController, 'Description', TextInputType.multiline),
+              const SizedBox(height: 16),
+              _buildTextField(_notesController, 'Notes', TextInputType.multiline),
               const SizedBox(height: 16),
               _buildDropdown(
                 'Category',
@@ -99,8 +133,10 @@ class _AddTaskPageState extends State<AddTaskPage> {
               ),
               const SizedBox(height: 16),
               _buildDatePicker(),
+              const SizedBox(height: 16),
+              _buildReminderPicker(),
               const SizedBox(height: 24),
-              _buildGradientButton('Add Task', _addTask),
+              Center(child: _buildGradientButton('Add Task', _addTask)),
             ],
           ),
         ),
@@ -180,6 +216,32 @@ class _AddTaskPageState extends State<AddTaskPage> {
     );
   }
 
+  Widget _buildReminderPicker() {
+    return GestureDetector(
+      onTap: () => _selectReminderTime(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [AppColors.cardShadow],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _reminderController.text.isEmpty
+                  ? 'Set Reminder (Optional)'
+                  : 'Reminder: ${_reminderController.text}',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            const Icon(Icons.alarm, color: AppColors.accent),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildGradientButton(String text, VoidCallback onPressed) {
     return Container(
       decoration: BoxDecoration(
@@ -196,7 +258,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
         ),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
       ),
     );
