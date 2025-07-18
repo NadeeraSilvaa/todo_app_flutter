@@ -5,6 +5,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/colors.dart';
+import '../utils/validators.dart';
+import '../widgets/common/common_text_field.dart';
+import '../widgets/common/common_gradient_button.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -19,11 +22,18 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _profilePictureUrl;
   bool _isDarkMode = false;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _loadUserSettings();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserSettings() async {
@@ -67,10 +77,16 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _pickAndUploadImage() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      setState(() {
+        _errorMessage = 'Please log in to update profile picture';
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
@@ -78,7 +94,21 @@ class _SettingsPageState extends State<SettingsPage> {
       final pickedFile = await picker.pickImage(source: ImageSource.gallery);
       if (pickedFile != null) {
         File imageFile = File(pickedFile.path);
-        // Upload to Firebase Storage
+        // Validate image size (max 5MB)
+        if (await imageFile.length() > 5 * 1024 * 1024) {
+          setState(() {
+            _errorMessage = 'Image size must be less than 5MB';
+          });
+          return;
+        }
+        // Validate image type
+        if (!['.jpg', '.jpeg', '.png'].contains(pickedFile.path.toLowerCase().substring(pickedFile.path.length - 4))) {
+          setState(() {
+            _errorMessage = 'Only JPG or PNG images are allowed';
+          });
+          return;
+        }
+
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('profile_pictures')
@@ -86,7 +116,6 @@ class _SettingsPageState extends State<SettingsPage> {
         await storageRef.putFile(imageFile);
         final downloadUrl = await storageRef.getDownloadURL();
 
-        // Update Firestore with the download URL
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'profilePicture': downloadUrl,
           'displayName': _currentName ?? user.displayName ?? '',
@@ -102,9 +131,9 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() {
+        _errorMessage = 'Failed to upload image: $e';
+      });
     } finally {
       setState(() {
         _isLoading = false;
@@ -113,10 +142,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _updateName() async {
+    if (Validators.validateName(_nameController.text.trim()) != null) {
+      setState(() {
+        _errorMessage = Validators.validateName(_nameController.text.trim());
+      });
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       setState(() {
         _isLoading = true;
+        _errorMessage = null;
       });
       try {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -132,9 +169,9 @@ class _SettingsPageState extends State<SettingsPage> {
           const SnackBar(content: Text('Name updated')),
         );
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        setState(() {
+          _errorMessage = 'Failed to update name: $e';
+        });
       } finally {
         setState(() {
           _isLoading = false;
@@ -148,6 +185,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (user != null) {
       setState(() {
         _isLoading = true;
+        _errorMessage = null;
       });
       try {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -163,9 +201,9 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(content: Text('Theme set to ${_isDarkMode ? 'Dark' : 'Light'}')),
         );
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        setState(() {
+          _errorMessage = 'Failed to update theme: $e';
+        });
       } finally {
         setState(() {
           _isLoading = false;
@@ -177,14 +215,15 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _logout() async {
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
     try {
       await FirebaseAuth.instance.signOut();
       Navigator.pushReplacementNamed(context, '/login');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      setState(() {
+        _errorMessage = 'Failed to log out: $e';
+      });
     } finally {
       setState(() {
         _isLoading = false;
@@ -194,51 +233,60 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: StreamBuilder<Map<String, dynamic>>(
-        stream: getUserProfile(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Error: ${snapshot.error}',
-                style: TextStyle(color: AppColors.textPrimary),
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
-          if (!snapshot.hasData) {
-            return Center(
-              child: Text(
-                'No profile data',
-                style: TextStyle(color: AppColors.textPrimary),
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: StreamBuilder<Map<String, dynamic>>(
+          stream: getUserProfile(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error: ${snapshot.error}',
+                  style: TextStyle(color: AppColors.textPrimary),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return Center(
+                child: Text(
+                  'No profile data',
+                  style: TextStyle(color: AppColors.textPrimary),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
 
-          final profile = snapshot.data!;
-          _nameController.text = profile['displayName'] ?? '';
-          _profilePictureUrl = profile['profilePicture'] ?? '';
+            final profile = snapshot.data!;
+            _nameController.text = profile['displayName'] ?? '';
+            _profilePictureUrl = profile['profilePicture'] ?? '';
 
-          return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Center(
+            return SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      'Settings',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.appBarGradient,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Text(
+                        'Settings',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimaryDark,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                     const SizedBox(height: 24),
                     Container(
@@ -264,42 +312,43 @@ class _SettingsPageState extends State<SettingsPage> {
                           const SizedBox(height: 16),
                           GestureDetector(
                             onTap: _isLoading ? null : _pickAndUploadImage,
-                            child: CircleAvatar(
-                              radius: 50,
-                              backgroundImage: _profilePictureUrl != null && _profilePictureUrl!.isNotEmpty
-                                  ? NetworkImage(_profilePictureUrl!)
-                                  : const AssetImage('assets/default_profile.jpg') as ImageProvider,
-                              onBackgroundImageError: _profilePictureUrl != null && _profilePictureUrl!.isNotEmpty
-                                  ? (_, __) => const Icon(Icons.error)
-                                  : null,
-                              child: _profilePictureUrl == null || _profilePictureUrl!.isEmpty
-                                  ? const Icon(Icons.person, size: 50, color: Colors.white)
-                                  : null,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 50,
+                                  backgroundImage: _profilePictureUrl != null && _profilePictureUrl!.isNotEmpty
+                                      ? NetworkImage(_profilePictureUrl!)
+                                      : const AssetImage('assets/default_profile.jpg') as ImageProvider,
+                                  onBackgroundImageError: _profilePictureUrl != null && _profilePictureUrl!.isNotEmpty
+                                      ? (_, __) => const Icon(Icons.error)
+                                      : null,
+                                  child: _profilePictureUrl == null || _profilePictureUrl!.isEmpty
+                                      ? const Icon(Icons.person, size: 50, color: Colors.white)
+                                      : null,
+                                ),
+                                if (_isLoading)
+                                  const CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+                                  ),
+                              ],
                             ),
                           ),
-
-                          // Text(
-                          //   'Tap to change profile picture',
-                          //   style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-                          //   textAlign: TextAlign.center,
-                          // ),
-
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tap to change profile picture',
+                            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: 200,
-                            child: TextField(
+                            child: CommonTextField(
                               controller: _nameController,
-                              decoration: InputDecoration(
-                                // labelText: 'Display Name',
-                                labelStyle: TextStyle(color: AppColors.textSecondary),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                filled: true,
-                                fillColor: AppColors.cardBackground.withOpacity(0.8),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
-                              textAlign: TextAlign.center,
+                              label: 'Display Name',
+                              type: TextInputType.name,
+                              validator: Validators.validateName,
+                              maxLines: 1,
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -309,12 +358,23 @@ class _SettingsPageState extends State<SettingsPage> {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
-                          _buildGradientButton('Update Name', _updateName),
-
-
+                          CommonGradientButton(
+                            text: 'Update Name',
+                            onPressed: _updateName,
+                            isLoading: _isLoading,
+                          ),
                         ],
                       ),
                     ),
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     const SizedBox(height: 32),
                     Container(
                       width: double.infinity,
@@ -396,46 +456,21 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    _buildGradientButton(
-                      'Logout',
-                      _logout,
-                      gradient: const LinearGradient(
-                        colors: [Colors.red, Colors.red],
+                    CommonGradientButton(
+                      text: 'Logout',
+                      onPressed: _logout,
+                      gradient: LinearGradient(
+                        colors: [AppColors.urgentCategory, AppColors.urgentCategory.withOpacity(0.7)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
+                      isLoading: _isLoading,
                     ),
-                    if (_isLoading) const SizedBox(height: 16),
-                    if (_isLoading) const Center(child: CircularProgressIndicator()),
                   ],
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildGradientButton(String text, VoidCallback onPressed, {LinearGradient? gradient}) {
-    return Container(
-      width: 200,
-      decoration: BoxDecoration(
-        gradient: gradient ?? AppColors.buttonGradient,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.cardShadow],
-      ),
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold ,color: AppColors.cardBackground),
-          textAlign: TextAlign.center,
+            );
+          },
         ),
       ),
     );

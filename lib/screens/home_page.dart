@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/colors.dart';
+import '../widgets/common/common_text_field.dart';
+import '../widgets/common/common_dropdown.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,6 +18,13 @@ class _HomePageState extends State<HomePage> {
   String _selectedSort = 'Due Date';
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Stream<List<Map<String, dynamic>>> getTasksStream() {
     String? uid = FirebaseAuth.instance.currentUser?.uid;
@@ -120,215 +129,219 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _deleteTask(String taskId) async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      await FirebaseFirestore.instance.collection('tasks').doc(taskId).delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task deleted')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete task: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Text(
-              'My Tasks',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.cardBackground,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [AppColors.cardShadow],
-              ),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search tasks...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Text(
+                    'My Tasks',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  suffixIcon: Icon(Icons.search, color: AppColors.accent),
                 ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value.trim();
-                  });
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildFilterButton('All'),
-                _buildFilterButton('Work'),
-                _buildFilterButton('Personal'),
-                _buildFilterButton('Urgent'),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: CommonTextField(
+                    controller: _searchController,
+                    label: 'Search tasks...',
+                    type: TextInputType.text,
+                    icon: Icons.search,
+                    maxLines: 1,
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value.trim();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildFilterButton('All'),
+                      _buildFilterButton('Work'),
+                      _buildFilterButton('Personal'),
+                      _buildFilterButton('Urgent'),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: CommonDropdown(
+                    label: 'Sort By',
+                    value: _selectedSort,
+                    items: ['Due Date', 'Priority', 'Title'],
+                    onChanged: (value) => setState(() => _selectedSort = value!),
+                  ),
+                ),
                 Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBackground,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [AppColors.cardShadow],
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: DropdownButton<String>(
-                      value: _selectedSort,
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: ['Due Date', 'Priority', 'Title'].map((String item) {
-                        return DropdownMenuItem<String>(
-                          value: item,
-                          child: Text(item, style: TextStyle(color: AppColors.textPrimary)),
+                  child: StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: getTasksStream(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Error: ${snapshot.error}',
+                            style: TextStyle(color: AppColors.textPrimary),
+                          ),
                         );
-                      }).toList(),
-                      onChanged: (value) => setState(() => _selectedSort = value!),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: getTasksStream(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: AppColors.textPrimary)));
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return Center(child: Text('No tasks available', style: TextStyle(color: AppColors.textPrimary)));
-                }
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'No tasks available',
+                            style: TextStyle(color: AppColors.textPrimary),
+                          ),
+                        );
+                      }
 
-                final tasks = snapshot.data!;
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = tasks[index];
-                    return Dismissible(
-                      key: Key(task['id']),
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (direction) {
-                        FirebaseFirestore.instance.collection('tasks').doc(task['id']).delete();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Task deleted')),
-                        );
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [AppColors.cardShadow],
-                        ),
-                        child: ListTile(
-                          leading: Checkbox(
-                            value: task['isCompleted'],
-                            activeColor: AppColors.accent,
-                            onChanged: (value) {
-                              FirebaseFirestore.instance
-                                  .collection('tasks')
-                                  .doc(task['id'])
-                                  .update({'isCompleted': value});
-                            },
-                          ),
-                          title: Text(
-                            task['title'],
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              decoration: task['isCompleted'] ? TextDecoration.lineThrough : null,
-                              color: _getTaskTitleColor(task),
+                      final tasks = snapshot.data!;
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(16.0),
+                        itemCount: tasks.length,
+                        itemBuilder: (context, index) {
+                          final task = tasks[index];
+                          return Dismissible(
+                            key: Key(task['id']),
+                            background: Container(
+                              color: AppColors.urgentCategory,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              child: const Icon(Icons.delete, color: Colors.white),
                             ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${task['category']} | Due: ${DateFormat('MMM dd, yyyy').format(task['dueDate'])}',
-                                style: TextStyle(color: AppColors.textPrimary),
+                            onDismissed: (direction) => _deleteTask(task['id']),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardBackground,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [AppColors.cardShadow],
                               ),
-                              if (task['notes'].isNotEmpty)
-                                Text(
-                                  'Notes: ${task['notes']}',
-                                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                              child: ListTile(
+                                leading: Checkbox(
+                                  value: task['isCompleted'],
+                                  activeColor: AppColors.accent,
+                                  onChanged: (value) {
+                                    FirebaseFirestore.instance
+                                        .collection('tasks')
+                                        .doc(task['id'])
+                                        .update({'isCompleted': value});
+                                  },
                                 ),
-                              if (task['reminder'] != null)
-                                Text(
-                                  'Reminder: ${DateFormat('MMM dd, yyyy HH:mm').format(task['reminder'])}',
-                                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
-                                ),
-                              Text(
-                                _getTimeLeft(task['dueDate']),
-                                style: TextStyle(
-                                  color: task['isCompleted'] ? Colors.grey : AppColors.textPrimary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: _getPriorityColor(task['priority']).withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Priority: ${task['priority']}',
+                                title: Text(
+                                  task['title'],
                                   style: TextStyle(
-                                    color: _getPriorityColor(task['priority']),
-                                    fontSize: 12,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w600,
+                                    decoration: task['isCompleted'] ? TextDecoration.lineThrough : null,
+                                    color: _getTaskTitleColor(task),
                                   ),
                                 ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${task['category']} | Due: ${DateFormat('MMM dd, yyyy').format(task['dueDate'])}',
+                                      style: TextStyle(color: AppColors.textPrimary),
+                                    ),
+                                    if (task['notes'].isNotEmpty)
+                                      Text(
+                                        'Notes: ${task['notes']}',
+                                        style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                                      ),
+                                    if (task['reminder'] != null)
+                                      Text(
+                                        'Reminder: ${DateFormat('MMM dd, yyyy HH:mm').format(task['reminder'])}',
+                                        style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                                      ),
+                                    Text(
+                                      _getTimeLeft(task['dueDate']),
+                                      style: TextStyle(
+                                        color: task['isCompleted'] ? Colors.grey : AppColors.textPrimary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _getPriorityColor(task['priority']).withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Priority: ${task['priority']}',
+                                        style: TextStyle(
+                                          color: _getPriorityColor(task['priority']),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Container(
+                                  width: 10,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: _getCategoryColor(task['category']),
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                ),
+                                onTap: () {
+                                  Navigator.pushNamed(context, '/edit_task', arguments: task);
+                                },
                               ),
-                            ],
-                          ),
-                          trailing: Container(
-                            width: 10,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _getCategoryColor(task['category']),
-                              borderRadius: BorderRadius.circular(5),
                             ),
-                          ),
-                          onTap: () {
-                            Navigator.pushNamed(context, '/edit_task', arguments: task);
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            if (_isLoading)
+              Container(
+                color: Colors.black.withOpacity(0.5),
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+          ],
+        ),
       ),
     );
   }

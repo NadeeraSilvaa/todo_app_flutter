@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
+import '../utils/validators.dart';
+import '../widgets/common/common_text_field.dart';
+import '../widgets/common/common_gradient_button.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,11 +13,13 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String? _errorMessage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -39,6 +44,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   }
 
   Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -47,7 +59,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = _getUserFriendlyError(e.code);
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
       });
     }
   }
@@ -59,6 +75,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       });
       return;
     }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(
         email: _emailController.text.trim(),
@@ -74,25 +96,43 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       );
     } on FirebaseAuthException catch (e) {
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = _getUserFriendlyError(e.code);
       });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _getUserFriendlyError(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No user found with this email';
+      case 'wrong-password':
+        return 'Incorrect password';
+      case 'invalid-email':
+        return 'Invalid email address';
+      case 'user-disabled':
+        return 'This account has been disabled';
+      default:
+        return 'An error occurred. Please try again.';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background, // Consistent background color
+      backgroundColor: AppColors.background,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.pageGradient, // Gradient from top to bottom
-        ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
+        decoration: const BoxDecoration(gradient: AppColors.pageGradient),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Form(
+                key: _formKey,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -107,19 +147,21 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 32),
-                    _buildTextField(
-                      _emailController,
-                      'Email',
-                      TextInputType.emailAddress,
+                    CommonTextField(
+                      controller: _emailController,
+                      label: 'Email',
+                      type: TextInputType.emailAddress,
                       icon: Icons.email,
+                      validator: Validators.validateEmail,
                     ),
                     const SizedBox(height: 16),
-                    _buildTextField(
-                      _passwordController,
-                      'Password',
-                      TextInputType.text,
+                    CommonTextField(
+                      controller: _passwordController,
+                      label: 'Password',
+                      type: TextInputType.text,
                       obscureText: true,
                       icon: Icons.lock,
+                      validator: Validators.validatePassword,
                     ),
                     if (_errorMessage != null)
                       Padding(
@@ -142,7 +184,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         ),
                       ),
                     const SizedBox(height: 24),
-                    _buildGradientButton('Login', _login),
+                    CommonGradientButton(
+                      text: 'Login',
+                      onPressed: _login,
+                      isLoading: _isLoading,
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -176,70 +222,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController controller,
-      String label,
-      TextInputType type, {
-        bool obscureText = false,
-        IconData? icon,
-      }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.cardShadow],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: type,
-        obscureText: obscureText,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: AppColors.textPrimary),
-          prefixIcon: icon != null ? Icon(icon, color: AppColors.accent) : null,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColors.accent, width: 2),
-          ),
-        ),
-        style: TextStyle(color: AppColors.textPrimary),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton(String text, VoidCallback onPressed) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: AppColors.buttonGradient,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.buttonShadow],
-      ),
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimaryDark,
           ),
         ),
       ),

@@ -3,6 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/colors.dart';
+import '../utils/validators.dart';
+import '../widgets/common/common_text_field.dart';
+import '../widgets/common/common_gradient_button.dart';
+import '../widgets/common/common_dropdown.dart';
 
 class AddTaskPage extends StatefulWidget {
   const AddTaskPage({super.key});
@@ -12,6 +16,7 @@ class AddTaskPage extends StatefulWidget {
 }
 
 class _AddTaskPageState extends State<AddTaskPage> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
@@ -20,6 +25,17 @@ class _AddTaskPageState extends State<AddTaskPage> {
   String _selectedPriority = 'Low';
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedReminderTime = TimeOfDay.now();
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _notesController.dispose();
+    _reminderController.dispose();
+    super.dispose();
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -65,129 +81,142 @@ class _AddTaskPageState extends State<AddTaskPage> {
   }
 
   Future<void> _addTask() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (!_formKey.currentState!.validate()) return;
 
-    final reminderDateTime = _reminderController.text.isNotEmpty
-        ? DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      _selectedReminderTime.hour,
-      _selectedReminderTime.minute,
-    )
-        : null;
-
-    await FirebaseFirestore.instance.collection('tasks').add({
-      'userId': user.uid,
-      'title': _titleController.text.trim(),
-      'description': _descriptionController.text.trim(),
-      'notes': _notesController.text.trim(),
-      'category': _selectedCategory,
-      'dueDate': Timestamp.fromDate(_selectedDate),
-      'reminder': reminderDateTime != null ? Timestamp.fromDate(reminderDateTime) : null,
-      'isCompleted': false,
-      'priority': _selectedPriority,
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
     });
-    Navigator.pop(context);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Please log in to add a task';
+      });
+      return;
+    }
+
+    try {
+      final reminderDateTime = _reminderController.text.isNotEmpty
+          ? DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedReminderTime.hour,
+        _selectedReminderTime.minute,
+      )
+          : null;
+
+      await FirebaseFirestore.instance.collection('tasks').add({
+        'userId': user.uid,
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'notes': _notesController.text.trim(),
+        'category': _selectedCategory,
+        'dueDate': Timestamp.fromDate(_selectedDate),
+        'reminder': reminderDateTime != null ? Timestamp.fromDate(reminderDateTime) : null,
+        'isCompleted': false,
+        'priority': _selectedPriority,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to add task: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Text(
-                  'New Task',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Text(
+                      'New Task',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  CommonTextField(
+                    controller: _titleController,
+                    label: 'Task Title',
+                    type: TextInputType.text,
+                    validator: Validators.validateTitle,
+                  ),
+                  const SizedBox(height: 16),
+                  CommonTextField(
+                    controller: _descriptionController,
+                    label: 'Description',
+                    type: TextInputType.multiline,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  CommonTextField(
+                    controller: _notesController,
+                    label: 'Notes',
+                    type: TextInputType.multiline,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  CommonDropdown(
+                    label: 'Category',
+                    value: _selectedCategory,
+                    items: ['Work', 'Personal', 'Urgent'],
+                    onChanged: (value) => setState(() => _selectedCategory = value!),
+                  ),
+                  const SizedBox(height: 16),
+                  CommonDropdown(
+                    label: 'Priority',
+                    value: _selectedPriority,
+                    items: ['Low', 'Medium', 'High'],
+                    onChanged: (value) => setState(() => _selectedPriority = value!),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildDatePicker(),
+                  const SizedBox(height: 16),
+                  _buildReminderPicker(),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: CommonGradientButton(
+                      text: 'Add Task',
+                      onPressed: _addTask,
+                      isLoading: _isLoading,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
-              _buildTextField(_titleController, 'Task Title', TextInputType.text),
-              const SizedBox(height: 16),
-              _buildTextField(_descriptionController, 'Description', TextInputType.multiline),
-              const SizedBox(height: 16),
-              _buildTextField(_notesController, 'Notes', TextInputType.multiline),
-              const SizedBox(height: 16),
-              _buildDropdown(
-                'Category',
-                _selectedCategory,
-                ['Work', 'Personal', 'Urgent'],
-                    (value) => setState(() => _selectedCategory = value!),
-              ),
-              const SizedBox(height: 16),
-              _buildDropdown(
-                'Priority',
-                _selectedPriority,
-                ['Low', 'Medium', 'High'],
-                    (value) => setState(() => _selectedPriority = value!),
-              ),
-              const SizedBox(height: 16),
-              _buildDatePicker(),
-              const SizedBox(height: 16),
-              _buildReminderPicker(),
-              const SizedBox(height: 24),
-              Center(child: _buildGradientButton('Add Task', _addTask)),
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController controller, String label, TextInputType type, {bool obscureText = false}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.cardShadow],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: type,
-        obscureText: obscureText,
-        maxLines: type == TextInputType.multiline ? 3 : 1,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdown(String label, String value, List<String> items, Function(String?) onChanged) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.cardShadow],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: DropdownButton<String>(
-        value: value,
-        isExpanded: true,
-        underline: const SizedBox(),
-        items: items.map((String item) {
-          return DropdownMenuItem<String>(
-            value: item,
-            child: Text(item, style: TextStyle(color: AppColors.textPrimary)),
-          );
-        }).toList(),
-        onChanged: onChanged,
       ),
     );
   }
@@ -237,28 +266,6 @@ class _AddTaskPageState extends State<AddTaskPage> {
             ),
             const Icon(Icons.alarm, color: AppColors.accent),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton(String text, VoidCallback onPressed) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: AppColors.buttonGradient,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.buttonShadow],
-      ),
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
       ),
     );

@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
+import '../utils/validators.dart';
+import '../widgets/common/common_text_field.dart';
+import '../widgets/common/common_gradient_button.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -11,6 +14,7 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -18,6 +22,7 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
   String? _errorMessage;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -44,9 +49,7 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
   }
 
   Future<void> _register() async {
-    setState(() {
-      _errorMessage = null;
-    });
+    if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
       setState(() {
@@ -55,14 +58,10 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
       return;
     }
 
-    if (_nameController.text.trim().isEmpty ||
-        _emailController.text.trim().isEmpty ||
-        _passwordController.text.trim().isEmpty) {
-      setState(() {
-        _errorMessage = 'Please fill in all fields';
-      });
-      return;
-    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -77,42 +76,51 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
         return;
       }
 
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
-          'displayName': _nameController.text.trim(),
-          'email': _emailController.text.trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'themeMode': 'light', // Default theme
-        });
-      } on FirebaseException catch (e) {
-        setState(() {
-          _errorMessage = 'Failed to create user profile: ${e.message}';
-        });
-        return;
-      }
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'displayName': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'themeMode': 'light',
+      });
 
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       setState(() {
-        _errorMessage = e.message ?? 'Authentication failed. Please try again.';
+        _errorMessage = _getUserFriendlyError(e.code);
       });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _getUserFriendlyError(String code) {
+    switch (code) {
+      case 'email-already-in-use':
+        return 'This email is already registered';
+      case 'invalid-email':
+        return 'Invalid email address';
+      case 'weak-password':
+        return 'Password is too weak';
+      default:
+        return 'An error occurred. Please try again.';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background, // Consistent background color
+      backgroundColor: AppColors.background,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.pageGradient, // Gradient from top to bottom
-        ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
+        decoration: const BoxDecoration(gradient: AppColors.pageGradient),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Form(
+                key: _formKey,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -127,29 +135,38 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 32),
-                    _buildTextField(_nameController, 'Name', TextInputType.name, icon: Icons.person),
+                    CommonTextField(
+                      controller: _nameController,
+                      label: 'Name',
+                      type: TextInputType.name,
+                      icon: Icons.person,
+                      validator: Validators.validateName,
+                    ),
                     const SizedBox(height: 16),
-                    _buildTextField(
-                      _emailController,
-                      'Email',
-                      TextInputType.emailAddress,
+                    CommonTextField(
+                      controller: _emailController,
+                      label: 'Email',
+                      type: TextInputType.emailAddress,
                       icon: Icons.email,
+                      validator: Validators.validateEmail,
                     ),
                     const SizedBox(height: 16),
-                    _buildTextField(
-                      _passwordController,
-                      'Password',
-                      TextInputType.text,
+                    CommonTextField(
+                      controller: _passwordController,
+                      label: 'Password',
+                      type: TextInputType.text,
                       obscureText: true,
                       icon: Icons.lock,
+                      validator: Validators.validatePassword,
                     ),
                     const SizedBox(height: 16),
-                    _buildTextField(
-                      _confirmPasswordController,
-                      'Confirm Password',
-                      TextInputType.text,
+                    CommonTextField(
+                      controller: _confirmPasswordController,
+                      label: 'Confirm Password',
+                      type: TextInputType.text,
                       obscureText: true,
                       icon: Icons.lock,
+                      validator: Validators.validatePassword,
                     ),
                     if (_errorMessage != null)
                       Padding(
@@ -172,7 +189,11 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                         ),
                       ),
                     const SizedBox(height: 24),
-                    _buildGradientButton('Register', _register),
+                    CommonGradientButton(
+                      text: 'Register',
+                      onPressed: _register,
+                      isLoading: _isLoading,
+                    ),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: () => Navigator.pop(context),
@@ -189,70 +210,6 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController controller,
-      String label,
-      TextInputType type, {
-        bool obscureText = false,
-        IconData? icon,
-      }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.cardShadow],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: type,
-        obscureText: obscureText,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: AppColors.textPrimary),
-          prefixIcon: icon != null ? Icon(icon, color: AppColors.accent) : null,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColors.accent, width: 2),
-          ),
-        ),
-        style: TextStyle(color: AppColors.textPrimary),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton(String text, VoidCallback onPressed) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: AppColors.buttonGradient,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [AppColors.buttonShadow],
-      ),
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimaryDark,
           ),
         ),
       ),
