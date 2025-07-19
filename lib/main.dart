@@ -3,14 +3,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:todo_app_flutter/screens/register_page.dart';
-import 'package:todo_app_flutter/screens/login_page.dart';
-import 'package:todo_app_flutter/screens/home_page.dart';
-import 'package:todo_app_flutter/screens/add_task_page.dart';
-import 'package:todo_app_flutter/screens/edit_task_page.dart';
-import 'package:todo_app_flutter/screens/summary_page.dart';
-import 'package:todo_app_flutter/screens/settings_page.dart';
-import 'package:todo_app_flutter/theme/colors.dart';
+import 'screens/register_page.dart';
+import 'screens/login_page.dart';
+import 'screens/home_page.dart';
+import 'screens/add_task_page.dart';
+import 'screens/edit_task_page.dart';
+import 'screens/summary_page.dart';
+import 'screens/settings_page.dart';
+import 'screens/splash_screen.dart';
+import 'theme/colors.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -39,7 +40,7 @@ class TodoListApp extends StatelessWidget {
         }
 
         return MaterialApp(
-          title: 'Todo List App',
+          title: 'TaskTide',
           theme: ThemeData(
             primaryColor: AppColors.primary,
             scaffoldBackgroundColor: AppColors.background,
@@ -76,8 +77,9 @@ class TodoListApp extends StatelessWidget {
             visualDensity: VisualDensity.adaptivePlatformDensity,
           ),
           themeMode: themeMode,
-          initialRoute: '/',
+          initialRoute: '/splash',
           routes: {
+            '/splash': (context) => const SplashScreen(),
             '/': (context) => const AuthWrapper(),
             '/login': (context) => const LoginPage(),
             '/register': (context) => const RegisterPage(),

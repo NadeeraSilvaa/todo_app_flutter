@@ -9,7 +9,7 @@ class CommonTextField extends StatelessWidget {
   final IconData? icon;
   final String? Function(String?)? validator;
   final int? maxLines;
-  final ValueChanged<String>? onChanged; // Added onChanged parameter
+  final ValueChanged<String>? onChanged;
 
   const CommonTextField({
     super.key,
@@ -20,7 +20,7 @@ class CommonTextField extends StatelessWidget {
     this.icon,
     this.validator,
     this.maxLines = 1,
-    this.onChanged, // Include in constructor
+    this.onChanged,
   });
 
   @override
@@ -31,15 +31,16 @@ class CommonTextField extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [AppColors.cardShadow],
       ),
-      child: TextField(
+      child: TextFormField( // Changed to TextFormField for form validation
         controller: controller,
         keyboardType: type,
         obscureText: obscureText,
         maxLines: maxLines,
-        onChanged: onChanged, // Pass onChanged to TextField
+        onChanged: onChanged,
+        validator: validator, // Use the validator directly
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: AppColors.textSecondary),
+          labelStyle: TextStyle(color: AppColors.textPrimary),
           prefixIcon: icon != null ? Icon(icon, color: AppColors.accent) : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -50,6 +51,15 @@ class CommonTextField extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: AppColors.accent, width: 2),
           ),
+          errorBorder: OutlineInputBorder( // Add error border for invalid input
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.redAccent, width: 2),
+          ),
+          focusedErrorBorder: OutlineInputBorder( // Add focused error border
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.redAccent, width: 2),
+          ),
+          errorStyle: TextStyle(color: Colors.redAccent), // Style for error text
         ),
         style: TextStyle(color: AppColors.textPrimary),
       ),

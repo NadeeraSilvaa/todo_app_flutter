@@ -3,7 +3,7 @@ import '../../theme/colors.dart';
 
 class CommonGradientButton extends StatelessWidget {
   final String text;
-  final VoidCallback onPressed;
+  final Future<void> Function()? onPressed; // Keep this as nullable
   final LinearGradient? gradient;
   final bool isLoading;
 
@@ -25,12 +25,14 @@ class CommonGradientButton extends StatelessWidget {
         boxShadow: [AppColors.buttonShadow],
       ),
       child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
+        onPressed: isLoading ? null : onPressed, // Only disable when loading
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         child: isLoading
             ? const SizedBox(
